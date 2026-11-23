@@ -1,0 +1,409 @@
+<title>Smoke Log</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one calm column. A single hero card for logging, then quiet sections for the chart, triggers, today's list and settings. */
+:root {
+  --bg: #eef1f0;
+  --surface: #fbfcfb;
+  --fg: #17201e;
+  --muted: #5b6965;
+  --line: #d5dcd9;
+  --track: #dfe6e3;
+  --accent: #0f766e;
+  --accent-fg: #ffffff;
+  --warn: #b4531f;
+  --font-display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101615; --surface: #182120; --fg: #e6efec; --muted: #94a39e;
+    --line: #2a3634; --track: #243130; --accent: #4fd1c0; --accent-fg: #07201c; --warn: #f0985f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101615; --surface: #182120; --fg: #e6efec; --muted: #94a39e;
+  --line: #2a3634; --track: #243130; --accent: #4fd1c0; --accent-fg: #07201c; --warn: #f0985f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 400 15px/1.5 var(--font-body);
+  padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2, .big { font-family: var(--font-display); }
+h1 { font-size: 30px; line-height: 1.1; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-family: var(--font-body); }
+.head { display: flex; flex-direction: column; gap: 4px; }
+.date { color: var(--muted); }
+.status { min-height: 1.3em; font-size: 13px; color: var(--warn); }
+.hero { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.count-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.big { font-size: 76px; line-height: 0.95; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+.of { color: var(--muted); font-size: 18px; font-variant-numeric: tabular-nums; }
+.meter { position: relative; display: flex; height: 10px; border-radius: 5px; background: var(--track); overflow: visible; }
+.meter span { height: 100%; }
+.meter .in { background: var(--accent); border-radius: 5px 0 0 5px; }
+.meter .in.full { border-radius: 5px; }
+.meter .over { background: var(--warn); border-radius: 0 5px 5px 0; }
+.meter i { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--fg); opacity: 0.55; }
+.msg { margin: 0; }
+.since { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.label { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.log-btn { font: 600 17px var(--font-body); height: 54px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-fg); cursor: pointer; width: 100%; }
+.log-btn:disabled { opacity: 0.45; cursor: default; }
+.log-btn:not(:disabled):active { transform: translateY(1px); }
+details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.earlier { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.small-btn { font: 500 14px var(--font-body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.small-btn:disabled { opacity: 0.45; cursor: default; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+.tile .k { font-size: 13px; color: var(--muted); }
+.tile .v { font: 700 28px/1.2 var(--font-display); font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 13px; color: var(--muted); }
+.tile .s.good { color: var(--accent); }
+.chart-wrap { overflow-x: auto; }
+svg { display: block; width: 100%; min-width: 300px; height: auto; }
+svg .ax { stroke: var(--line); stroke-width: 1; }
+svg .gl { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+svg .ok { fill: var(--accent); }
+svg .hi { fill: var(--warn); }
+svg text { fill: var(--muted); font: 10px var(--font-body); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; font-variant-numeric: tabular-nums; }
+svg text.today { fill: var(--accent); font-weight: 700; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.legend b { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.trig { display: grid; grid-template-columns: minmax(80px, 120px) 1fr 2.5ch; gap: 10px; align-items: center; font-size: 14px; margin-bottom: 8px; }
+.trig .bar { height: 8px; border-radius: 4px; background: var(--track); }
+.trig .bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.trig .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.empty { color: var(--muted); margin: 0; }
+ul.list { list-style: none; margin: 0; padding: 0; }
+ul.list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+ul.list li:first-child { border-top: 0; }
+ul.list .t { font-variant-numeric: tabular-nums; font-weight: 500; min-width: 5.5ch; }
+ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rm { font: inherit; font-size: 13px; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 6px 4px; text-decoration: underline; }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.settings label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.settings input { width: 100%; font-size: 15px; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+</style>
+
+<main class="wrap">
+  <header class="head">
+    <h1>Smoke Log</h1>
+    <div class="date" id="date"></div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </header>
+
+  <section class="hero" aria-label="Today">
+    <div class="count-row">
+      <span class="big" id="count">0</span>
+      <span class="of" id="of"></span>
+    </div>
+    <div class="meter" id="meter" role="img"></div>
+    <p class="msg" id="msg"></p>
+    <p class="since" id="since"></p>
+    <div>
+      <p class="label" id="chipsLabel">What set it off? (optional)</p>
+      <div class="chips" id="chips" role="group" aria-labelledby="chipsLabel"></div>
+    </div>
+    <button class="log-btn" id="logBtn" type="button" disabled>Log a cigarette</button>
+    <details>
+      <summary>Add an earlier one</summary>
+      <div class="earlier">
+        <input type="datetime-local" id="when" aria-label="When did you smoke it?">
+        <button class="small-btn" id="addEarlier" type="button" disabled>Add entry</button>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2>This week</h2>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section>
+    <h2>Last 14 days</h2>
+    <div class="chart-wrap" id="chart"></div>
+    <div class="legend">
+      <span><b style="background:var(--accent)"></b>Within goal</span>
+      <span><b style="background:var(--warn)"></b>Over goal</span>
+      <span>Dashed line is your daily goal</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Triggers, last 30 days</h2>
+    <div id="triggers"></div>
+  </section>
+
+  <section>
+    <h2>Today's log</h2>
+    <ul class="list" id="today"></ul>
+  </section>
+
+  <section>
+    <h2>Settings</h2>
+    <div class="settings">
+      <label for="goal">Daily goal (cigarettes)<input id="goal" type="number" inputmode="numeric" min="1" max="200"></label>
+      <label for="price">Pack price<input id="price" type="number" inputmode="decimal" min="0" step="0.01"></label>
+      <label for="pack">Cigarettes per pack<input id="pack" type="number" inputmode="numeric" min="1" max="100"></label>
+      <label for="cur">Currency<input id="cur" type="text" maxlength="4"></label>
+    </div>
+    <p class="note" id="saveNote"></p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var TAGS = ["Coffee", "Break", "Stress", "After a meal", "Social", "Boredom", "Drinks", "Other"];
+  var DEF = { goal: 10, price: 0, pack: 20, cur: "$" };
+  var LS = "smokelog.v1";
+  var S = { settings: Object.assign({}, DEF), days: {} };   // days: "YYYY-MM-DD" -> [{t: ms, g?: tag}]
+  var tag = null, store = null, loaded = false;
+  var note = { reach: "", save: "" };
+
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function dkey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function dayCount(d) { return (S.days[dkey(d)] || []).length; }
+  function daysAgo(i) { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate() - i); }
+  function money(n) {
+    var c = S.settings.cur, v = n.toFixed(2);
+    return c.length <= 1 ? c + v : v + " " + c;
+  }
+  function perCig() { return S.settings.price > 0 ? S.settings.price / S.settings.pack : 0; }
+  function setStatus() { $("status").textContent = note.reach || note.save; }
+
+  /* ---------- storage ---------- */
+  function lsLoad() {
+    try {
+      var j = JSON.parse(localStorage.getItem(LS));
+      if (j) { S.settings = Object.assign({}, DEF, j.settings); S.days = j.days || {}; }
+    } catch (e) {}
+  }
+  function lsSave() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} }
+
+  async function initStore() {
+    var db = null, uid = null;
+    try {
+      var got = await Promise.all([claude.use("db"), claude.use("user")]);
+      db = got[0]; uid = got[1] ? await got[1].id() : null;
+    } catch (e) {}
+    if (!db || !uid) {
+      lsLoad();
+      store = { saveDay: lsSave, saveSettings: lsSave };
+      loaded = true;
+      $("saveNote").textContent = "Saved in this browser only. Sign in to keep your log across devices.";
+      render();
+      return;
+    }
+    var col = db.collection("data/users/" + uid);   // private to this viewer
+    var chains = {};
+    function queue(k, fn) {
+      chains[k] = (chains[k] || Promise.resolve()).then(fn).then(
+        function () { note.save = ""; setStatus(); },
+        function () { note.save = "Couldn't save the last change. Check your connection and try again."; setStatus(); }
+      );
+    }
+    store = {
+      saveDay: function (k) {
+        queue(k, function () {
+          var e = S.days[k] || [];
+          return e.length ? col.doc("day-" + k).set({ e: e }) : col.doc("day-" + k).delete();
+        });
+      },
+      saveSettings: function () {
+        queue("settings", function () { return col.doc("settings").set(Object.assign({}, S.settings)); });
+      }
+    };
+    $("saveNote").textContent = "Your log is private to you and saved to your account.";
+    var timer = setTimeout(function () {
+      note.reach = "Can't reach your saved log yet. Logging is paused until it loads."; setStatus();
+    }, 10000);
+    col.onSnapshot(function (snap) {
+      if (!snap.metadata.fromCache) { clearTimeout(timer); note.reach = ""; setStatus(); }
+      var days = {}, st = null;
+      snap.docs.forEach(function (d) {
+        var v = d.data() || {};
+        if (d.id === "settings") st = v;
+        else if (d.id.indexOf("day-") === 0) days[d.id.slice(4)] = Array.isArray(v.e) ? v.e : [];
+      });
+      S.days = days; S.settings = Object.assign({}, DEF, st || {});
+      loaded = true;
+      render();
+    }, function (e) {
+      clearTimeout(timer);
+      note.reach = e && e.code === "revoked" ? "Access to this page changed, so saving is off." : "Couldn't load your saved log.";
+      setStatus();
+    });
+  }
+
+  /* ---------- actions ---------- */
+  function addEntry(t, g) {
+    if (!store || !loaded) return;
+    var k = dkey(new Date(t));
+    var arr = (S.days[k] || []).concat([g ? { t: t, g: g } : { t: t }]);
+    arr.sort(function (a, b) { return a.t - b.t; });
+    S.days[k] = arr;
+    store.saveDay(k);
+    render();
+  }
+  function removeEntry(t) {
+    if (!store || !loaded) return;
+    var k = dkey(new Date(t));
+    S.days[k] = (S.days[k] || []).filter(function (e) { return e.t !== t; });
+    store.saveDay(k);
+    render();
+  }
+
+  /* ---------- render ---------- */
+  function fmtSince(ms) {
+    var m = Math.floor(ms / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + " h " + (m % 60) + " min ago";
+    return Math.floor(h / 24) + " d " + (h % 24) + " h ago";
+  }
+  function renderSince() {
+    var last = 0, now = Date.now();
+    Object.keys(S.days).forEach(function (k) { S.days[k].forEach(function (e) { if (e.t <= now && e.t > last) last = e.t; }); });
+    $("since").textContent = last ? "Last cigarette: " + fmtSince(now - last) : "No cigarettes logged yet.";
+  }
+  function renderHero() {
+    var n = dayCount(new Date()), goal = S.settings.goal;
+    $("count").textContent = n;
+    $("of").textContent = "of " + goal + " today";
+    var total = Math.max(goal, n), within = Math.min(n, goal) / total * 100, over = n > goal ? (n - goal) / total * 100 : 0;
+    $("meter").setAttribute("aria-label", n + " of " + goal + " cigarettes today");
+    $("meter").innerHTML = '<span class="in' + (over ? "" : " full") + '" style="width:' + within + '%"></span>' +
+      (over ? '<span class="over" style="width:' + over + '%"></span><i style="left:' + (goal / total * 100) + '%"></i>' : "");
+    var msg;
+    if (n === 0) msg = "Nothing logged today.";
+    else if (n < goal) msg = (goal - n) + " left before today's goal.";
+    else if (n === goal) msg = "You're at today's goal.";
+    else msg = (n - goal) + " over today's goal.";
+    $("msg").textContent = msg;
+    renderSince();
+    $("chips").innerHTML = TAGS.map(function (t) {
+      return '<button type="button" class="chip" data-tag="' + esc(t) + '" aria-pressed="' + (tag === t) + '">' + esc(t) + "</button>";
+    }).join("");
+    $("logBtn").disabled = !loaded; $("addEarlier").disabled = !loaded;
+  }
+  function sumDays(from, to) { var s = 0; for (var i = from; i <= to; i++) s += dayCount(daysAgo(i)); return s; }
+  function renderTiles() {
+    var cur = sumDays(0, 6), prev = sumDays(7, 13), c = perCig();
+    var cmp, good = false;
+    if (prev === 0) cmp = "No earlier week to compare";
+    else {
+      var pct = Math.round((cur - prev) / prev * 100);
+      cmp = pct === 0 ? "Same as the 7 days before" : Math.abs(pct) + "% " + (pct < 0 ? "fewer" : "more") + " than the 7 days before";
+      good = pct < 0;
+    }
+    var tiles = [
+      { k: "Last 7 days", v: cur, s: (cur / 7).toFixed(1) + " per day" },
+      { k: "Compared with the week before", v: prev === 0 ? "-" : (cur - prev > 0 ? "+" : "") + (cur - prev), s: cmp, good: good },
+      c > 0 ? { k: "Spent, last 7 days", v: money(cur * c), s: "Today: " + money(dayCount(new Date()) * c) }
+            : { k: "Spent, last 7 days", v: "-", s: "Add your pack price in settings" }
+    ];
+    $("tiles").innerHTML = tiles.map(function (t) {
+      return '<div class="tile"><div class="k">' + esc(t.k) + '</div><div class="v">' + esc(t.v) + '</div><div class="s' + (t.good ? " good" : "") + '">' + esc(t.s) + "</div></div>";
+    }).join("");
+  }
+  function renderChart() {
+    var goal = S.settings.goal, rows = [];
+    for (var i = 13; i >= 0; i--) { var d = daysAgo(i); rows.push({ d: d, n: dayCount(d), today: i === 0 }); }
+    var max = Math.max.apply(null, [goal, 1].concat(rows.map(function (r) { return r.n; })));
+    var W = 360, base = 124, top = 16, h = base - top, slot = W / 14, bw = 16;
+    function y(v) { return base - v / max * h; }
+    var s = '<svg viewBox="0 0 ' + W + ' 144" role="img" aria-label="Cigarettes per day for the last 14 days">';
+    s += '<line class="ax" x1="0" x2="' + W + '" y1="' + base + '" y2="' + base + '"/>';
+    s += '<line class="gl" x1="0" x2="' + W + '" y1="' + y(goal) + '" y2="' + y(goal) + '"/>';
+    rows.forEach(function (r, i) {
+      var x = i * slot + (slot - bw) / 2, bh = r.n / max * h, cx = i * slot + slot / 2;
+      if (r.n > 0) {
+        s += '<rect class="' + (r.n > goal ? "hi" : "ok") + '" x="' + x + '" y="' + (base - bh) + '" width="' + bw + '" height="' + bh + '" rx="2"/>';
+        s += '<text x="' + cx + '" y="' + (base - bh - 3) + '">' + r.n + "</text>";
+      }
+      s += '<text class="' + (r.today ? "today" : "") + '" x="' + cx + '" y="140">' + esc(r.d.toLocaleDateString(undefined, { weekday: "narrow" })) + "</text>";
+    });
+    $("chart").innerHTML = s + "</svg>";
+  }
+  function renderTriggers() {
+    var counts = {};
+    for (var i = 0; i < 30; i++) (S.days[dkey(daysAgo(i))] || []).forEach(function (e) { if (e.g) counts[e.g] = (counts[e.g] || 0) + 1; });
+    var keys = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
+    if (!keys.length) { $("triggers").innerHTML = '<p class="empty">Pick a trigger before you log a cigarette and your most common ones will show up here.</p>'; return; }
+    var m = counts[keys[0]];
+    $("triggers").innerHTML = keys.map(function (k) {
+      return '<div class="trig"><span>' + esc(k) + '</span><span class="bar"><span style="width:' + counts[k] / m * 100 + '%"></span></span><span class="n">' + counts[k] + "</span></div>";
+    }).join("");
+  }
+  function renderToday() {
+    var arr = (S.days[dkey(new Date())] || []).slice().reverse();
+    if (!arr.length) { $("today").innerHTML = '<li><span class="empty">Nothing logged yet today.</span></li>'; return; }
+    $("today").innerHTML = arr.map(function (e) {
+      return '<li><span class="t">' + esc(new Date(e.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) + '</span><span class="g">' + (e.g ? esc(e.g) : "No trigger") + '</span><button type="button" class="rm" data-t="' + Number(e.t) + '" aria-label="Remove entry">Remove</button></li>';
+    }).join("");
+  }
+  function renderSettings() {
+    var a = document.activeElement, st = S.settings;
+    [["goal", st.goal], ["price", st.price || ""], ["pack", st.pack], ["cur", st.cur]].forEach(function (p) {
+      var el = $(p[0]); if (el !== a) el.value = p[1];
+    });
+  }
+  function render() {
+    $("date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+    renderHero(); renderTiles(); renderChart(); renderTriggers(); renderToday(); renderSettings();
+  }
+
+  /* ---------- events ---------- */
+  $("chips").addEventListener("click", function (e) {
+    var b = e.target.closest(".chip"); if (!b) return;
+    tag = tag === b.dataset.tag ? null : b.dataset.tag;
+    renderHero();
+  });
+  $("logBtn").addEventListener("click", function () { addEntry(Date.now(), tag); tag = null; renderHero(); });
+  $("addEarlier").addEventListener("click", function () {
+    var v = $("when").value, t = v ? new Date(v).getTime() : NaN;
+    if (!isFinite(t) || t > Date.now() + 60000) { $("when").focus(); return; }
+    addEntry(t, tag); tag = null; $("when").value = ""; renderHero();
+  });
+  $("today").addEventListener("click", function (e) {
+    var b = e.target.closest(".rm"); if (b) removeEntry(Number(b.dataset.t));
+  });
+  function num(v, lo, hi, def) { var n = parseFloat(v); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; }
+  ["goal", "price", "pack", "cur"].forEach(function (id) {
+    $(id).addEventListener("change", function () {
+      if (!store || !loaded) return;
+      var st = S.settings;
+      if (id === "goal") st.goal = Math.round(num($(id).value, 1, 200, DEF.goal));
+      if (id === "price") st.price = num($(id).value, 0, 1e6, 0);
+      if (id === "pack") st.pack = Math.round(num($(id).value, 1, 100, DEF.pack));
+      if (id === "cur") st.cur = $(id).value.trim().slice(0, 4) || DEF.cur;
+      store.saveSettings();
+      $(id).blur();
+      render();
+    });
+  });
+  setInterval(renderSince, 30000);
+
+  render();
+  initStore();
+})();
+</script>
