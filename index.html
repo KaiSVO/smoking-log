@@ -99,11 +99,27 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
 .settings label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .settings input { width: 100%; font-size: 15px; }
 .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.head-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.theme { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.theme button { font: 500 13px var(--font-body); padding: 6px 10px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.theme button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.custom { width: 100%; }
+.daypick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+ul.list li { flex-wrap: wrap; }
+.ed { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.ed input { flex: 1 1 140px; }
 </style>
 
 <main class="wrap">
   <header class="head">
-    <h1>Smoke Log</h1>
+    <div class="head-row">
+      <h1>Smoke Log</h1>
+      <div class="theme" id="theme" role="group" aria-label="Color theme">
+        <button type="button" data-m="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-m="light" aria-pressed="false">Light</button>
+        <button type="button" data-m="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
     <div class="date" id="date"></div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
   </header>
@@ -119,6 +135,7 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
     <div>
       <p class="label" id="chipsLabel">What set it off? (optional)</p>
       <div class="chips" id="chips" role="group" aria-labelledby="chipsLabel"></div>
+      <input class="custom" id="custom" type="text" maxlength="40" placeholder="Or type your own reason" aria-label="Your own reason" style="margin-top:8px">
     </div>
     <button class="log-btn" id="logBtn" type="button" disabled>Log a cigarette</button>
     <details>
@@ -151,8 +168,13 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
   </section>
 
   <section>
-    <h2>Today's log</h2>
+    <h2>Log</h2>
+    <div class="daypick">
+      <input type="date" id="viewDay" aria-label="Day to view">
+      <button class="small-btn" id="todayBtn" type="button">Today</button>
+    </div>
     <ul class="list" id="today"></ul>
+    <datalist id="tagList"></datalist>
   </section>
 
   <section>
@@ -175,12 +197,21 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
   var S = { settings: Object.assign({}, DEF), days: {} };   // days: "YYYY-MM-DD" -> [{t: ms, g?: tag}]
   var tag = null, store = null, loaded = false;
   var note = { reach: "", save: "" };
+  var viewKey = null, editing = null;   // viewKey null = today
 
   function $(id) { return document.getElementById(id); }
   function pad(n) { return String(n).padStart(2, "0"); }
   function dkey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function dayCount(d) { return (S.days[dkey(d)] || []).length; }
+  function canon(s) {
+    s = String(s).trim().replace(/\s+/g, " ").slice(0, 40);
+    var l = s.toLowerCase();
+    for (var i = 0; i < TAGS.length; i++) if (TAGS[i].toLowerCase() === l) return TAGS[i];
+    return s;
+  }
+  function curTag() { var c = $("custom").value.trim(); return c || tag; }
+  function clearTag() { tag = null; $("custom").value = ""; }
   function daysAgo(i) { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate() - i); }
   function money(n) {
     var c = S.settings.cur, v = n.toFixed(2);
@@ -257,7 +288,8 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
   function addEntry(t, g) {
     if (!store || !loaded) return;
     var k = dkey(new Date(t));
-    var arr = (S.days[k] || []).concat([g ? { t: t, g: g } : { t: t }]);
+    var cg = g ? canon(g) : "";
+    var arr = (S.days[k] || []).concat([cg ? { t: t, g: cg } : { t: t }]);
     arr.sort(function (a, b) { return a.t - b.t; });
     S.days[k] = arr;
     store.saveDay(k);
@@ -267,6 +299,15 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
     if (!store || !loaded) return;
     var k = dkey(new Date(t));
     S.days[k] = (S.days[k] || []).filter(function (e) { return e.t !== t; });
+    store.saveDay(k);
+    render();
+  }
+  function editEntry(t, g) {
+    if (!store || !loaded) return;
+    var k = dkey(new Date(t)), cg = g ? canon(g) : "";
+    S.days[k] = (S.days[k] || []).map(function (e) {
+      return e.t !== t ? e : (cg ? { t: e.t, g: cg } : { t: e.t });
+    });
     store.saveDay(k);
     render();
   }
@@ -346,7 +387,7 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
   }
   function renderTriggers() {
     var counts = {};
-    for (var i = 0; i < 30; i++) (S.days[dkey(daysAgo(i))] || []).forEach(function (e) { if (e.g) counts[e.g] = (counts[e.g] || 0) + 1; });
+    for (var i = 0; i < 30; i++) (S.days[dkey(daysAgo(i))] || []).forEach(function (e) { if (e.g) { var c = canon(e.g); counts[c] = (counts[c] || 0) + 1; } });
     var keys = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; });
     if (!keys.length) { $("triggers").innerHTML = '<p class="empty">Pick a trigger before you log a cigarette and your most common ones will show up here.</p>'; return; }
     var m = counts[keys[0]];
@@ -355,10 +396,19 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
     }).join("");
   }
   function renderToday() {
-    var arr = (S.days[dkey(new Date())] || []).slice().reverse();
-    if (!arr.length) { $("today").innerHTML = '<li><span class="empty">Nothing logged yet today.</span></li>'; return; }
+    var ei = $("editInput");
+    if (ei && document.activeElement === ei) return;   // don't wipe a trigger being typed
+    var vk = viewKey || dkey(new Date()), dp = $("viewDay");
+    dp.max = dkey(new Date());
+    if (dp !== document.activeElement) dp.value = vk;
+    var arr = (S.days[vk] || []).slice().reverse();
+    if (!arr.length) { $("today").innerHTML = '<li><span class="empty">Nothing logged ' + (viewKey ? "on this day." : "yet today.") + "</span></li>"; return; }
     $("today").innerHTML = arr.map(function (e) {
-      return '<li><span class="t">' + esc(new Date(e.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) + '</span><span class="g">' + (e.g ? esc(e.g) : "No trigger") + '</span><button type="button" class="rm" data-t="' + Number(e.t) + '" aria-label="Remove entry">Remove</button></li>';
+      var tm = esc(new Date(e.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })), t = Number(e.t);
+      if (editing === e.t) {
+        return '<li><span class="t">' + tm + '</span><div class="ed"><input id="editInput" type="text" list="tagList" maxlength="40" value="' + esc(e.g || "") + '" placeholder="Trigger" aria-label="Trigger"><button type="button" class="small-btn" data-act="save" data-t="' + t + '">Save</button><button type="button" class="small-btn" data-act="cancel">Cancel</button></div></li>';
+      }
+      return '<li><span class="t">' + tm + '</span><span class="g">' + (e.g ? esc(e.g) : "No trigger") + '</span><button type="button" class="rm" data-act="edit" data-t="' + t + '" aria-label="Edit trigger">Edit</button><button type="button" class="rm" data-act="rm" data-t="' + t + '" aria-label="Remove entry">Remove</button></li>';
     }).join("");
   }
   function renderSettings() {
@@ -375,18 +425,36 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
   /* ---------- events ---------- */
   $("chips").addEventListener("click", function (e) {
     var b = e.target.closest(".chip"); if (!b) return;
-    tag = tag === b.dataset.tag ? null : b.dataset.tag;
+    var picked = tag === b.dataset.tag ? null : b.dataset.tag;
+    clearTag(); tag = picked;
     renderHero();
   });
-  $("logBtn").addEventListener("click", function () { addEntry(Date.now(), tag); tag = null; renderHero(); });
+  $("custom").addEventListener("input", function () { if ($("custom").value.trim()) { tag = null; renderHero(); } });
+  $("logBtn").addEventListener("click", function () { addEntry(Date.now(), curTag()); clearTag(); renderHero(); });
   $("addEarlier").addEventListener("click", function () {
     var v = $("when").value, t = v ? new Date(v).getTime() : NaN;
     if (!isFinite(t) || t > Date.now() + 60000) { $("when").focus(); return; }
-    addEntry(t, tag); tag = null; $("when").value = ""; renderHero();
+    addEntry(t, curTag()); clearTag(); $("when").value = ""; renderHero();
   });
   $("today").addEventListener("click", function (e) {
-    var b = e.target.closest(".rm"); if (b) removeEntry(Number(b.dataset.t));
+    var b = e.target.closest("[data-act]"); if (!b) return;
+    var t = Number(b.dataset.t), a = b.dataset.act;
+    if (a === "rm") removeEntry(t);
+    else if (a === "edit") { editing = t; renderToday(); var x = $("editInput"); if (x) { x.focus(); x.select(); } }
+    else if (a === "save") { var v = $("editInput").value; editing = null; editEntry(t, v); }
+    else if (a === "cancel") { editing = null; renderToday(); }
   });
+  $("today").addEventListener("keydown", function (e) {
+    if (e.target.id !== "editInput") return;
+    if (e.key === "Enter") { var v = e.target.value; var t = editing; editing = null; editEntry(t, v); }
+    else if (e.key === "Escape") { editing = null; renderToday(); }
+  });
+  $("viewDay").addEventListener("change", function () {
+    var v = $("viewDay").value;
+    viewKey = !v || v === dkey(new Date()) ? null : v;
+    editing = null; renderToday();
+  });
+  $("todayBtn").addEventListener("click", function () { viewKey = null; editing = null; $("viewDay").blur(); renderToday(); });
   function num(v, lo, hi, def) { var n = parseFloat(v); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def; }
   ["goal", "price", "pack", "cur"].forEach(function (id) {
     $(id).addEventListener("change", function () {
@@ -401,6 +469,23 @@ ul.list .g { color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere
       render();
     });
   });
+  $("tagList").innerHTML = TAGS.map(function (t) { return '<option value="' + esc(t) + '">'; }).join("");
+
+  var TH = "smokelog.theme";
+  function applyTheme(m) {
+    var r = document.documentElement;
+    if (m === "light" || m === "dark") r.setAttribute("data-theme", m); else r.removeAttribute("data-theme");
+    document.querySelectorAll("#theme button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.m === m)); });
+  }
+  var savedTheme = "auto";
+  try { savedTheme = localStorage.getItem(TH) || "auto"; } catch (e) {}
+  if (savedTheme !== "auto") applyTheme(savedTheme);   // "auto" leaves the page's own theme alone
+  $("theme").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    applyTheme(b.dataset.m);
+    try { b.dataset.m === "auto" ? localStorage.removeItem(TH) : localStorage.setItem(TH, b.dataset.m); } catch (er) {}
+  });
+
   setInterval(renderSince, 30000);
 
   render();
